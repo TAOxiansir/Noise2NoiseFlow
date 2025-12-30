@@ -20,14 +20,16 @@ from utils.patch_stats_calculator import PatchStatsCalculator
 from model.noise2noise_flow import Noise2NoiseFlow
 from data_loader.sidd_utils import calc_kldiv_mb
 
-def save_checkpoint(model, optimizer, epoch_num, checkpoint_dir):
+def save_checkpoint(model, optimizer, epoch_num, checkpoint_dir):#保存训练进度（存档）为了防止意外中断（如断电、程序崩溃）导致白跑，
+    #或者为了保留训练过程中效果最好的模型，我们需要把当前的状态保存到硬盘上。epoch_num:当前训练到了第几轮；checkpoint_dir:文件保存的路径
     checkpoint = {'epoch_num' : epoch_num, 'state_dict' : model.state_dict(), 'optimizer' : optimizer.state_dict()}
-    torch.save(checkpoint, checkpoint_dir)
+    torch.save(checkpoint, checkpoint_dir)#把字典序列化并写入硬盘文件
 
-def load_checkpoint(model, optimizer, checkpoint_dir):
-    checkpoint = torch.load(checkpoint_dir)
-    model.load_state_dict(checkpoint['state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
+def load_checkpoint(model, optimizer, checkpoint_dir):#读取训练进度（读档）当重新开始训练，或者想用训练好的模型进行测试时，用这个函数来恢复状态。
+    #model：刚初始化，架构相同的空模型；optimizer：刚初始化的优化器；checkpoint_dir：之前保存的文件路径
+    checkpoint = torch.load(checkpoint_dir)#把硬盘上的文件读取回内存，变回字典格式
+    model.load_state_dict(checkpoint['state_dict'])#把字典里的参数“填”进你的模型里。此时，你的模型就变回了保存时的那个“聪明”状态。
+    optimizer.load_state_dict(checkpoint['optimizer'])#恢复优化器的记忆，确保它接着之前的节奏继续优化。
     return model, optimizer, checkpoint['epoch_num']
 
 def init_params():
