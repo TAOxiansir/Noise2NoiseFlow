@@ -7,7 +7,7 @@ import numpy as np
 from os.path import exists
 import os
 
-def check_download_sidd(sidd_path):
+def check_download_sidd(sidd_path):#检查SIDD数据集是否已下载
     if not exists(sidd_path):
         print(sidd_path + ' does not exist')
 
