@@ -228,19 +228,19 @@ def get_sidd_filename_tuple(idx, sidd_full_path, train_or_test='train', numpy=Fa
     raise ValueError('index out of range. max length is {}'.format(counter))
 
 def sidd_full_filenames_len(sidd_full_path, train_or_test='train', cam=None, iso=None):
-    if train_or_test == 'train':
+    if train_or_test == 'train':#这些索引对应SIDD数据集中的具体场景/实例编号。
         inst_idxs = [4, 11, 13, 17, 18, 20, 22, 23, 25, 27, 28, 29, 30, 34, 35, 39, 40, 42, 43, 44, 45, 47, 81, 86, 88,
                      90, 101, 102, 104, 105, 110, 111, 115, 116, 125, 126, 127, 129, 132, 135,
-                     138, 140, 175, 177, 178, 179, 180, 181, 185, 186, 189, 192, 193, 194, 196, 197]
+                     138, 140, 175, 177, 178, 179, 180, 181, 185, 186, 189, 192, 193, 194, 196, 197]#训练集实例索引（共56个）
         # removed: 114, 134, 184, 136, 190, 188, 117, 137, 191
     else:
         inst_idxs = [54, 55, 57, 59, 60, 62, 63, 66, 150, 151, 152, 155, 159, 160, 161, 163, 164, 165, 166, 198,
-                     199] # removed 154 since it raises PermissionDenied error. find a way and add it back
+                     199] # removed 154 since it raises PermissionDenied error. find a way and add it back# 测试集实例索引（共21个，移除了154）
 
-    cntr = 0
+    cntr = 0#计数器
 
-    for id in inst_idxs:
-        id_str = '%04d' % id
+    for id in inst_idxs:## 遍历所有实例索引
+        id_str = '%04d' % id# 格式化为4位数字符串，如'0004'
         subdir = glob.glob(os.path.join(sidd_full_path, id_str + '*'))[0]
 
         _, _, inst_cam, inst_iso, _, _, _ = subdir.split('/')[-1].split('_')
@@ -269,7 +269,7 @@ def sidd_full_filenames_tuple(sidd_full_path, train_or_test='train', numpy=False
 
     for id in inst_idxs:
         id_str = '%04d' % id
-        subdir = glob.glob(os.path.join(sidd_full_path, id_str + '*'))[0]
+        subdir = glob.glob(os.path.join(sidd_full_path, id_str + '*'))[0]#glob.glob()搜索目录下的所有以“id_str"开头的文件；subdir为列表的第一个元素（因为有[0]）
 
         _, _, inst_cam, inst_iso, _, _, _ = subdir.split('/')[-1].split('_')
         inst_iso = int(inst_iso)

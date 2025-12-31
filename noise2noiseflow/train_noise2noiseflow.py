@@ -63,22 +63,22 @@ def main(hps):#hps超参数集合
     hps.device = 'cuda' if torch.cuda.device_count() else 'cpu'#如果系统中有 GPU → 使用 GPU否则 → 使用 CPU
 
     # output log dir
-    logdir = os.path.abspath(os.path.join('experiments', 'paper', hps.logdir)) + '/'   # Changed sidd to paper
-    
+    logdir = os.path.abspath(os.path.join('experiments', 'paper', hps.logdir)) + '/'   # Changed sidd to paper创建一个绝对路径，用于保存训练过程的所有输出文件，即experiments/paper/[hps.logdir]/
+    #os.path.abspath(): 转换为绝对路径
     if hps.no_resume:
-        if os.path.exists(logdir):
-            shutil.rmtree(logdir)
+        if os.path.exists(logdir):#检查logdir路径是否存在，如果之前运行过相同实验，目录会存在
+            shutil.rmtree(logdir)#递归删除整个目录及其所有内容，彻底清除之前的实验记录
 
     if not os.path.exists(logdir):
-        os.makedirs(logdir, exist_ok=True)
-    hps.logdirname = hps.logdir
-    hps.logdir = logdir
+        os.makedirs(logdir, exist_ok=True)#检查logdir目录是否已存在，如果不存在，创建该目录（包括所有父目录），exist_ok=True表示：如果目录已存在，不报错
+    hps.logdirname = hps.logdir#将原始的日志目录名称保存到hps.logdirname
+    hps.logdir = logdir#将hps.logdir更新为完整的绝对路径
 
-    medium_sidd_path = hps.sidd_path
-    if hps.dataset_type == 'full':
-        path = hps.sidd_path.split("/")
-        path[-2] = "SIDD_Medium_Raw"
-        medium_sidd_path = "/".join(path)
+    medium_sidd_path = hps.sidd_path#将超参数中的sidd_path保存到medium_sidd_path
+    if hps.dataset_type == 'full':#hps.dataset_type是一个超参数，决定使用哪个数据集，可能的值：'medium'（默认）或'full'
+        path = hps.sidd_path.split("/")# 将路径拆分成列表
+        path[-2] = "SIDD_Medium_Raw"# 修改倒数第二个元素
+        medium_sidd_path = "/".join(path)# 重新拼接成路径
 
     train_dataset = IterableSIDDFullRawDataset(
         sidd_full_path=hps.sidd_path,
