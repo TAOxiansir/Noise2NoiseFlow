@@ -15,7 +15,7 @@ from utils.arg_parser import arg_parser
 from data_loader.loader import (check_download_sidd, SIDDMediumDataset)
 from data_loader.iterable_loader import IterableSIDDMediumDataset, IterableSIDDFullRawDataset
 from data_loader.utils import calc_train_test_stats, get_its, ResultLogger
-from utils.mylogger import add_logging_level
+from utils.mylogger import add_logging_level#向Python标准库的logging模块动态添加自定义日志级别。
 from utils.patch_stats_calculator import PatchStatsCalculator
 from model.noise2noise_flow import Noise2NoiseFlow
 from data_loader.sidd_utils import calc_kldiv_mb
@@ -52,15 +52,15 @@ def main(hps):#hps超参数集合
     np.random.seed(hps.seed)#NumPy库的随机数生成器设置函数，确保可复现性
 
     # set up a custom logger    
-    add_logging_level('TRACE', 100)
-    logging.getLogger(__name__).setLevel("TRACE")
-    logging.basicConfig(level=logging.TRACE)
+    add_logging_level('TRACE', 100)#向 Python logging 系统注册一个新的日志级别：TRACE。
+    logging.getLogger(__name__).setLevel("TRACE")#为当前模块的 logger 设置日志等级为 TRACE。
+    logging.basicConfig(level=logging.TRACE)#配置 root logger（根日志器） 的最低日志级别。
 
     hps.n_bins = 2. ** hps.n_bits_x
 
-    logging.trace('SIDD path = %s' % hps.sidd_path)
-    logging.trace('Num GPUs Available: %s' % torch.cuda.device_count())
-    hps.device = 'cuda' if torch.cuda.device_count() else 'cpu'
+    logging.trace('SIDD path = %s' % hps.sidd_path)#以 TRACE 级别打印当前使用的 SIDD 数据集路径。
+    logging.trace('Num GPUs Available: %s' % torch.cuda.device_count())#打印当前系统中可用的 GPU 数量（CUDA 可见设备数）
+    hps.device = 'cuda' if torch.cuda.device_count() else 'cpu'#如果系统中有 GPU → 使用 GPU否则 → 使用 CPU
 
     # output log dir
     logdir = os.path.abspath(os.path.join('experiments', 'paper', hps.logdir)) + '/'   # Changed sidd to paper
