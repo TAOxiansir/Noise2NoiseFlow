@@ -43,13 +43,13 @@ def init_params():
     cam_params_i[:, :] = 1.0
     return (c_i, beta1_i, beta2_i, gain_params_i, cam_params_i)
 
-def main(hps):
+def main(hps):#hps超参数集合
     check_download_sidd(hps.sidd_path)
 
-    total_time = time.time()
-    host = socket.gethostname()
-    torch.random.manual_seed(hps.seed)
-    np.random.seed(hps.seed)
+    total_time = time.time()#记录当前的时间点
+    host = socket.gethostname()#返回当前运行代码的计算机的主机名
+    torch.random.manual_seed(hps.seed)#PyTorch的随机数生成器设置函数，确保实验的可复现性
+    np.random.seed(hps.seed)#NumPy库的随机数生成器设置函数，确保可复现性
 
     # set up a custom logger    
     add_logging_level('TRACE', 100)
