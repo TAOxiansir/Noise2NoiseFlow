@@ -54,7 +54,7 @@ def load_metadata(meta_path):
     meta = meta['metadata']
     return meta[0, 0]
 
-def load_one_tuple_images(filepath_tuple, subtract=False):
+def load_one_tuple_images(filepath_tuple, subtract=False):#从给定的文件路径元组中加载一对噪声图像及其元数据，并进行预处理。
     image1_path = filepath_tuple[0]  # index 0: input noisy image path
     image2_path = filepath_tuple[1]  # index 1: ground truth image path
     meta_path = filepath_tuple[2]  # index 2: metadata path
@@ -179,7 +179,7 @@ def extract_patches(im_tuple, num_patches, patch_size, sampling='uniform', shuff
     
     return np.concatenate(image1_patches, axis=0), np.concatenate(image2_patches, axis=0)
 
-def get_sidd_filename_tuple(idx, sidd_full_path, train_or_test='train', numpy=False, cam=None, iso=None):
+def get_sidd_filename_tuple(idx, sidd_full_path, train_or_test='train', numpy=False, cam=None, iso=None):#根据给定的索引 idx，从 SIDD 数据集中获取特定图像对的文件路径元组。
     if train_or_test == 'train':
         inst_idxs = [4, 11, 13, 17, 18, 20, 22, 23, 25, 27, 28, 29, 30, 34, 35, 39, 40, 42, 43, 44, 45, 47, 81, 86, 88,
                      90, 101, 102, 104, 105, 110, 111, 115, 116, 125, 126, 127, 129, 132, 135,
@@ -205,12 +205,12 @@ def get_sidd_filename_tuple(idx, sidd_full_path, train_or_test='train', numpy=Fa
         if counter != idx:
             counter += 1
             continue
-        else:
+        else:#构建目录名
             noisy_dir = '{}_NOISY_RAW'.format(id_str)
             metadata_dir = '{}_METADATA_RAW'.format(id_str)
 
-            num_noisy_images = len(os.listdir(os.path.join(subdir, noisy_dir)))
-            noisy1_idx = random.randint(1, num_noisy_images-1)
+            num_noisy_images = len(os.listdir(os.path.join(subdir, noisy_dir)))#计算可用的噪声图像数量
+            noisy1_idx = random.randint(1, num_noisy_images-1)#随机选择一对连续的噪声图像
             noisy2_idx = noisy1_idx + 1
 
             if numpy:
@@ -241,14 +241,14 @@ def sidd_full_filenames_len(sidd_full_path, train_or_test='train', cam=None, iso
 
     for id in inst_idxs:## 遍历所有实例索引
         id_str = '%04d' % id# 格式化为4位数字符串，如'0004'
-        subdir = glob.glob(os.path.join(sidd_full_path, id_str + '*'))[0]
+        subdir = glob.glob(os.path.join(sidd_full_path, id_str + '*'))[0]#搜索sidd_full_path目录下所有id_str开头的文件，并获取第一个匹配项
 
         _, _, inst_cam, inst_iso, _, _, _ = subdir.split('/')[-1].split('_')
         inst_iso = int(inst_iso)
 
-        if (cam is not None) and (inst_cam != cam):
+        if (cam is not None) and (inst_cam != cam):#跳过不符合相机型号的实例
             continue
-        if (iso is not None) and (iso != 0) and (inst_iso != iso):
+        if (iso is not None) and (iso != 0) and (inst_iso != iso):## 跳过不符合ISO值的实例
             continue
 
         cntr += 1
@@ -419,7 +419,7 @@ def load_raw_np_images(filepath_tuple, subtract=False):
 
     return input_image, gt_image, nlf0, nlf1, iso, cam
 
-def divide_parts(n, n_parts):
+def divide_parts(n, n_parts):#将一个整数n尽可能均匀地分配给n_parts个部分
     """divide a number into a list of parts"""
     (div, rem) = divmod(n, n_parts)
     divs = [div] * n_parts

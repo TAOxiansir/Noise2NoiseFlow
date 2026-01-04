@@ -20,19 +20,19 @@ class IterableSIDDFullRawDataset(IterableDataset):
         self.len = sidd_full_filenames_len(sidd_full_path=self.sidd_full_path, train_or_test=self.train_or_test, cam=self.cam, iso=self.iso)
 
 
-    def __len__(self):
+    def __len__(self):#返回数据集的总样本数=图像对数*每张图像提取的块数
         return self.len * self.num_patches_per_image
 
-    def patch_generator(self):
-        worker_info = torch.utils.data.get_worker_info()
+    def patch_generator(self):#负责流式生成数据样本
+        worker_info = torch.utils.data.get_worker_info()#自动检测是否在多进程数据加载器中；如果是多进程，将数据均匀分割给不同worker，避免数据重复
 
-        if worker_info is None:
+        if worker_info is None:#单进程
             start = 0
             end = self.len
 
-        else:
-            image_div_parts = divide_parts(self.len, worker_info.num_workers)
-            start, end = sum(image_div_parts[:worker_info.id]), sum(image_div_parts[:worker_info.id+1])
+        else:#多进程
+            image_div_parts = divide_parts(self.len, worker_info.num_workers)#用于将多进程数据加载时均匀分配数据给不同worker
+            start, end = sum(image_div_parts[:worker_info.id]), sum(image_div_parts[:worker_info.id+1])# 计算当前worker负责的数据范围
 
         for idx in range(start, end):
             file_name_tuple = get_sidd_filename_tuple(idx, sidd_full_path=self.sidd_full_path, train_or_test=self.train_or_test, cam=self.cam, iso=self.iso, numpy=False)
@@ -41,7 +41,7 @@ class IterableSIDDFullRawDataset(IterableDataset):
 
             img1, img2, nlf0, nlf1, iso, cam = load_one_tuple_images(file_name_tuple, subtract=self.subtract_images)
             img1_patches, img2_patches = extract_patches((img1, img2), num_patches=self.num_patches_per_image, patch_size=self.patch_size, sampling=self.patch_sampling, shuffle=self.shuffle_patches)
-            img1_patches = img1_patches.transpose((0, 3, 1, 2))
+            img1_patches = img1_patches.transpose((0, 3, 1, 2))#调整维度顺序
             img2_patches = img2_patches.transpose((0, 3, 1, 2))
 
             for patch_idx in range(len(img1_patches)):
