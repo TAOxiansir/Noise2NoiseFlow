@@ -14,6 +14,7 @@ sys.path.append('../')
 from utils.arg_parser import arg_parser
 from data_loader.loader import (check_download_sidd, SIDDMediumDataset)
 from data_loader.iterable_loader import IterableSIDDMediumDataset, IterableSIDDFullRawDataset
+from data_loader.custom_loader import CustomGrayscaleDataset, GrayscaleAugmentation
 from data_loader.utils import calc_train_test_stats, get_its, ResultLogger
 from utils.mylogger import add_logging_level#向Python标准库的logging模块动态添加自定义日志级别。
 from utils.patch_stats_calculator import PatchStatsCalculator
@@ -44,7 +45,7 @@ def init_params():
     return (c_i, beta1_i, beta2_i, gain_params_i, cam_params_i)
 
 def main(hps):#hps超参数集合
-    check_download_sidd(hps.sidd_path)
+    #check_download_sidd(hps.sidd_path)
 
     total_time = time.time()#记录当前的时间点
     host = socket.gethostname()#返回当前运行代码的计算机的主机名
@@ -74,49 +75,130 @@ def main(hps):#hps超参数集合
     hps.logdirname = hps.logdir#将原始的日志目录名称保存到hps.logdirname
     hps.logdir = logdir#将hps.logdir更新为完整的绝对路径
 
-    medium_sidd_path = hps.sidd_path#将超参数中的sidd_path保存到medium_sidd_path
-    if hps.dataset_type == 'full':#hps.dataset_type是一个超参数，决定使用哪个数据集，可能的值：'medium'（默认）或'full'
-        path = hps.sidd_path.split("/")# 将路径拆分成列表
-        path[-2] = "SIDD_Medium_Raw"# 修改倒数第二个元素
-        medium_sidd_path = "/".join(path)# 重新拼接成路径
+    #medium_sidd_path = hps.sidd_path#将超参数中的sidd_path保存到medium_sidd_path
+    #if hps.dataset_type == 'full':#hps.dataset_type是一个超参数，决定使用哪个数据集，可能的值：'medium'（默认）或'full'
+    #    path = hps.sidd_path.split("/")# 将路径拆分成列表
+    #    path[-2] = "SIDD_Medium_Raw"# 修改倒数第二个元素
+    #    medium_sidd_path = "/".join(path)# 重新拼接成路径
 
-    train_dataset = IterableSIDDFullRawDataset(
-        sidd_full_path=hps.sidd_path,
+    # train_dataset = IterableSIDDFullRawDataset(
+    #     sidd_full_path=hps.sidd_path,
+    #     train_or_test='train',
+    #     cam=hps.camera,
+    #     iso=hps.iso,
+    #     patch_size=(hps.patch_height, hps.patch_height)
+    # )
+    # train_dataloader = DataLoader(train_dataset, batch_size=hps.n_batch_train, shuffle=False, num_workers=5, pin_memory=True)
+    # hps.n_tr_inst = train_dataset.len
+    # hps.raw = True
+    # logging.trace('# training scene instances (cam = {}, iso = {}) = {}'.format(
+    #     str(hps.camera), str(hps.iso), hps.n_tr_inst))
+
+    # validation_dataset = IterableSIDDFullRawDataset(
+    #     sidd_full_path=hps.sidd_path,
+    #     train_or_test='test',
+    #     cam=hps.camera,
+    #     iso=hps.iso,
+    #     patch_size=(hps.patch_height, hps.patch_height)
+    # )
+    # validation_dataloader = DataLoader(validation_dataset, batch_size=hps.n_batch_test, shuffle=False, num_workers=2, pin_memory=True)
+
+    # test_dataset = IterableSIDDMediumDataset(
+    #     sidd_medium_path='../data/SIDD_Medium_Raw/Data',
+    #     train_or_test='test',
+    #     cam=hps.camera,
+    #     iso=hps.iso,
+    #     patch_size=(hps.patch_height, hps.patch_height)
+    # )
+    # test_dataloader = DataLoader(test_dataset, batch_size=hps.n_batch_test, shuffle=False, num_workers=2, pin_memory=True)
+    #hps.n_ts_inst = test_dataset.cnt_inst
+    # logging.trace('# testing scene instances (cam = {}, iso = {}) = {}'.format(
+    #     str(hps.camera), str(hps.iso), hps.n_ts_inst))
+
+    # x_shape = next(iter(train_dataloader))['noisy1'].shape
+    # hps.x_shape = x_shape
+    # hps.n_dims = np.prod(x_shape[1:])
+    # ========== 自定义灰度图数据集加载 ==========
+    
+    # 训练数据集
+    train_dataset = CustomGrayscaleDataset(
+        dataset_path=hps.dataset_path,      # 使用新的参数
         train_or_test='train',
-        cam=hps.camera,
-        iso=hps.iso,
-        patch_size=(hps.patch_height, hps.patch_height)
+        num_regions=4,                       # 4个区域
+        patch_size=(hps.patch_height, hps.patch_height),
+        original_size=(1280, 1024),          # 原始图像尺寸
+        scene_based_pairing=True,            # 场景内配对
+        pair_distance=1,                     # 相邻帧配对
+        iso=hps.iso if hps.iso else 800,
+        cam=hps.camera if hps.camera else 0,
+        nlf0=0.0001,
+        nlf1=0.00001,
+        transform=GrayscaleAugmentation(     # 数据增强
+            flip_horizontal=True,
+            flip_vertical=True,
+            rotation=False
+        )
     )
-    train_dataloader = DataLoader(train_dataset, batch_size=hps.n_batch_train, shuffle=False, num_workers=5, pin_memory=True)
-    hps.n_tr_inst = train_dataset.len
-    hps.raw = True
-    logging.trace('# training scene instances (cam = {}, iso = {}) = {}'.format(
-        str(hps.camera), str(hps.iso), hps.n_tr_inst))
-
-    validation_dataset = IterableSIDDFullRawDataset(
-        sidd_full_path=hps.sidd_path,
+    
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=hps.n_batch_train,
+        shuffle=False,
+        num_workers=5,
+        pin_memory=True
+    )
+    
+    hps.n_tr_inst = len(train_dataset.noisy_files)  # 图像数量（不是样本数）
+    hps.raw = False  # 重要：灰度图不是RAW格式
+    hps.n_channels = 1  # 重要：单通道
+    
+    logging.trace('# training images = {}'.format(hps.n_tr_inst))
+    logging.trace('# training samples (with crops) = {}'.format(len(train_dataset)))
+    
+    # 验证数据集（如果有单独的验证集）
+    # validation_dataset = CustomGrayscaleDataset(
+    #     dataset_path=hps.dataset_path,
+    #     train_or_test='val',  # 如果没有val，可以用test
+    #     num_regions=4,
+    #     patch_size=(hps.patch_height, hps.patch_height),
+    #     original_size=(1280, 1024),
+    #     scene_based_pairing=False,
+    #     iso=hps.iso if hps.iso else 800,
+    #     cam=hps.camera if hps.camera else 0
+    # )
+    
+    # validation_dataloader = DataLoader(
+    #     validation_dataset,
+    #     batch_size=hps.n_batch_test,
+    #     shuffle=False,
+    #     num_workers=2,
+    #     pin_memory=True
+    # )
+    
+    # 测试数据集
+    test_dataset = CustomGrayscaleDataset(
+        dataset_path=hps.dataset_path,
         train_or_test='test',
-        cam=hps.camera,
-        iso=hps.iso,
-        patch_size=(hps.patch_height, hps.patch_height)
+        num_regions=4,
+        patch_size=(hps.patch_height, hps.patch_height),
+        original_size=(1280, 1024),
+        scene_based_pairing=False,
+        subtract_images=True,  # 测试时计算噪声层
+        iso=hps.iso if hps.iso else 800,
+        cam=hps.camera if hps.camera else 0
     )
-    validation_dataloader = DataLoader(validation_dataset, batch_size=hps.n_batch_test, shuffle=False, num_workers=2, pin_memory=True)
-
-    test_dataset = IterableSIDDMediumDataset(
-        sidd_medium_path='../data/SIDD_Medium_Raw/Data',
-        train_or_test='test',
-        cam=hps.camera,
-        iso=hps.iso,
-        patch_size=(hps.patch_height, hps.patch_height)
+    
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=hps.n_batch_test,
+        shuffle=False,
+        num_workers=2,
+        pin_memory=True
     )
-    test_dataloader = DataLoader(test_dataset, batch_size=hps.n_batch_test, shuffle=False, num_workers=2, pin_memory=True)
-    hps.n_ts_inst = test_dataset.cnt_inst
-    logging.trace('# testing scene instances (cam = {}, iso = {}) = {}'.format(
-        str(hps.camera), str(hps.iso), hps.n_ts_inst))
-
-    x_shape = next(iter(train_dataloader))['noisy1'].shape
-    hps.x_shape = x_shape
-    hps.n_dims = np.prod(x_shape[1:])
+    
+    hps.n_ts_inst = len(test_dataset.noisy_files)
+    logging.trace('# testing images = {}'.format(hps.n_ts_inst))
+    logging.trace('# testing samples (with crops) = {}'.format(len(test_dataset)))
 
     # calculate data stats and baselines
     logging.trace('calculating data stats and baselines...')
