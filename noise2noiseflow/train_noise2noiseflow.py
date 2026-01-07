@@ -155,25 +155,25 @@ def main(hps):#hps超参数集合
     logging.trace('# training images = {}'.format(hps.n_tr_inst))
     logging.trace('# training samples (with crops) = {}'.format(len(train_dataset)))
     
-    # 验证数据集（如果有单独的验证集）
-    # validation_dataset = CustomGrayscaleDataset(
-    #     dataset_path=hps.dataset_path,
-    #     train_or_test='val',  # 如果没有val，可以用test
-    #     num_regions=4,
-    #     patch_size=(hps.patch_height, hps.patch_height),
-    #     original_size=(1280, 1024),
-    #     scene_based_pairing=False,
-    #     iso=hps.iso if hps.iso else 800,
-    #     cam=hps.camera if hps.camera else 0
-    # )
+    #验证数据集（如果有单独的验证集）
+    validation_dataset = CustomGrayscaleDataset(
+        dataset_path=hps.dataset_path,
+        train_or_test='test',  # 如果没有val，可以用test
+        num_regions=4,
+        patch_size=(hps.patch_height, hps.patch_height),
+        original_size=(1280, 1024),
+        scene_based_pairing=False,
+        iso=hps.iso if hps.iso else 800,
+        cam=hps.camera if hps.camera else 0
+    )
     
-    # validation_dataloader = DataLoader(
-    #     validation_dataset,
-    #     batch_size=hps.n_batch_test,
-    #     shuffle=False,
-    #     num_workers=2,
-    #     pin_memory=True
-    # )
+    validation_dataloader = DataLoader(
+        validation_dataset,
+        batch_size=hps.n_batch_test,
+        shuffle=False,
+        num_workers=2,
+        pin_memory=True
+    )
     
     # 测试数据集
     test_dataset = CustomGrayscaleDataset(
