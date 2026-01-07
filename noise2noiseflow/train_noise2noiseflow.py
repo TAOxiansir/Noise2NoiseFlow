@@ -200,6 +200,15 @@ def main(hps):#hps超参数集合
     logging.trace('# testing images = {}'.format(hps.n_ts_inst))
     logging.trace('# testing samples (with crops) = {}'.format(len(test_dataset)))
 
+    # 验证数据加载
+    first_batch = next(iter(train_dataloader))
+    x_shape = first_batch['noisy1'].shape
+    hps.x_shape = x_shape
+    hps.n_dims = np.prod(x_shape[1:])
+    
+    logging.trace('数据形状: {}'.format(x_shape))
+    logging.trace('维度数: {}'.format(hps.n_dims))
+
     # calculate data stats and baselines
     logging.trace('calculating data stats and baselines...')
     pat_stats_calculator = PatchStatsCalculator(test_dataloader, x_shape[-1], n_channels=hps.n_channels,
