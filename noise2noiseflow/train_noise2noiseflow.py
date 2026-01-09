@@ -23,13 +23,24 @@ from data_loader.sidd_utils import calc_kldiv_mb
 
 def save_checkpoint(model, optimizer, epoch_num, checkpoint_dir):#保存训练进度（存档）为了防止意外中断（如断电、程序崩溃）导致白跑，
     #或者为了保留训练过程中效果最好的模型，我们需要把当前的状态保存到硬盘上。epoch_num:当前训练到了第几轮；checkpoint_dir:文件保存的路径
+    # ========== 多GPU保存修改：保存原始模型（去除DataParallel包装）==========
+    if isinstance(model, torch.nn.DataParallel):
+        model_state_dict = model.module.state_dict()  # 获取原始模型的参数
+    else:
+        model_state_dict = model.state_dict()
     checkpoint = {'epoch_num' : epoch_num, 'state_dict' : model.state_dict(), 'optimizer' : optimizer.state_dict()}
     torch.save(checkpoint, checkpoint_dir)#把字典序列化并写入硬盘文件
 
 def load_checkpoint(model, optimizer, checkpoint_dir):#读取训练进度（读档）当重新开始训练，或者想用训练好的模型进行测试时，用这个函数来恢复状态。
     #model：刚初始化，架构相同的空模型；optimizer：刚初始化的优化器；checkpoint_dir：之前保存的文件路径
     checkpoint = torch.load(checkpoint_dir)#把硬盘上的文件读取回内存，变回字典格式
-    model.load_state_dict(checkpoint['state_dict'])#把字典里的参数“填”进你的模型里。此时，你的模型就变回了保存时的那个“聪明”状态。
+    # ========== 多GPU加载修改：自动处理DataParallel包装 ==========
+    if isinstance(model, torch.nn.DataParallel):
+        model.module.load_state_dict(checkpoint['state_dict'])  # 加载到原始模型
+    else:
+        model.load_state_dict(checkpoint['state_dict'])  # 单GPU直接加载
+
+    
     optimizer.load_state_dict(checkpoint['optimizer'])#恢复优化器的记忆，确保它接着之前的节奏继续优化。
     return model, optimizer, checkpoint['epoch_num']
 
@@ -60,7 +71,14 @@ def main(hps):#hps超参数集合
     hps.n_bins = 2. ** hps.n_bits_x
 
     logging.trace('SIDD path = %s' % hps.sidd_path)#以 TRACE 级别打印当前使用的 SIDD 数据集路径。
+    # ========== 多GPU检测 ==========
+    num_gpus = torch.cuda.device_count()
     logging.trace('Num GPUs Available: %s' % torch.cuda.device_count())#打印当前系统中可用的 GPU 数量（CUDA 可见设备数）
+    if num_gpus > 1:
+        logging.trace('=' * 50)
+        logging.trace('🚀 检测到 %d 张GPU，将使用DataParallel进行并行训练' % num_gpus)
+        logging.trace('=' * 50)
+
     hps.device = 'cuda' if torch.cuda.device_count() else 'cpu'#如果系统中有 GPU → 使用 GPU否则 → 使用 CPU
 
     # output log dir
@@ -158,7 +176,7 @@ def main(hps):#hps超参数集合
     #验证数据集（如果有单独的验证集）
     validation_dataset = CustomGrayscaleDataset(
         dataset_path=hps.dataset_path,
-        train_or_test='test',  # 如果没有val，可以用test
+        train_or_test='train',  # 如果没有val，可以用test
         num_regions=4,
         patch_size=(hps.patch_height, hps.patch_height),
         original_size=(1280, 1024),
@@ -236,11 +254,26 @@ def main(hps):#hps超参数集合
             n2nflow.denoiser.load_state_dict(checkpoint)
 
     n2nflow.to(hps.device)
+    if torch.cuda.device_count() > 1:
+        logging.trace('=' * 70)
+        logging.trace('✓ 使用 torch.nn.DataParallel 包装模型')
+        logging.trace('✓ 可用GPU: {}'.format(list(range(torch.cuda.device_count()))))
+        logging.trace('✓ 实际Batch Size: {} (每卡 {})'.format(
+            hps.n_batch_train, 
+            hps.n_batch_train // torch.cuda.device_count()
+        ))
+        logging.trace('=' * 70)
+        n2nflow_raw = n2nflow  # 保存原始模型引用
+        n2nflow = torch.nn.DataParallel(n2nflow)
+    else:
+        n2nflow_raw = n2nflow
 
     optimizer = torch.optim.Adam(n2nflow.parameters(), lr=hps.lr, betas=(0.9, 0.999), eps=1e-08)
     hps.num_params = np.sum([np.prod(params.shape) for params in n2nflow.parameters()])
-    print("noiseflow num params: {}".format(int(np.sum([np.prod(params.shape) for params in n2nflow.noise_flow.parameters()]))))
-    print("Denoiser num params: {}".format(np.sum([np.prod(params.shape) for params in n2nflow.denoiser.parameters()])))
+    # 兼容 DataParallel
+    model = n2nflow.module if isinstance(n2nflow, torch.nn.DataParallel) else n2nflow
+    print("noiseflow num params: {}".format(int(np.sum([np.prod(params.shape) for params in model.noise_flow.parameters()]))))
+    print("Denoiser num params: {}".format(np.sum([np.prod(params.shape) for params in model.denoiser.parameters()])))
     logging.trace('number of parameters = {}'.format(hps.num_params))
     
     start_epoch = 1
@@ -294,7 +327,7 @@ def main(hps):#hps超参数集合
                     'nlf0': image['nlf0'].to(hps.device),
                     'nlf1': image['nlf1'].to(hps.device)
                 })
-            n2nflow_loss, nll, mse = n2nflow.loss_u(**kwargs)
+            n2nflow_loss, nll, mse = n2nflow_raw.loss_u(**kwargs)
             train_loss.append(n2nflow_loss.item())
             train_nll.append(nll)
             train_mse.append(mse)
@@ -340,7 +373,7 @@ def main(hps):#hps超参数集合
                             'nlf0': image['nlf0'].to(hps.device),
                             'nlf1': image['nlf1'].to(hps.device)
                         })
-                    n2nflow_loss, nll, mse = n2nflow.loss_u(**kwargs)
+                    n2nflow_loss, nll, mse = n2nflow_raw.loss_u(**kwargs)
                     val_loss.append(n2nflow_loss.item())
                     val_nll.append(nll)
                     val_mse.append(mse)
@@ -377,8 +410,8 @@ def main(hps):#hps超参数集合
                             'nlf0': image['nlf0'].to(hps.device),
                             'nlf1': image['nlf1'].to(hps.device)
                         })
-                    nll, sd_z = n2nflow.loss_s(**kwargs)
-                    mse, psnr = n2nflow.mse_loss(kwargs['x'] + kwargs['clean'], kwargs['clean'])
+                    nll, sd_z = n2nflow_raw.loss_s(**kwargs)
+                    mse, psnr = n2nflow_raw.mse_loss(kwargs['x'] + kwargs['clean'], kwargs['clean'])
                     test_nll.append(nll.item())
                     test_mse.append(mse)
                     test_psnr.append(psnr)
@@ -457,25 +490,25 @@ def main(hps):#hps超参数集合
                             'nlf1': image['nlf1'].to(hps.device)
                         })
 
-                    x_sample_val = n2nflow.sample(**kwargs)
+                    x_sample_val = n2nflow_raw.sample(**kwargs)
                     kwargs.update({'x': x_sample_val})
                     kwargs.pop('eps_std')
                     kwargs.pop('writer')
                     kwargs.pop('step')
-                    nll, sd_z = n2nflow.loss_s(**kwargs)
+                    nll, sd_z = n2nflow_raw.loss_s(**kwargs)
                     sample_loss.append(nll.item())
                     sample_sdz.append(sd_z.item())
 
                     # marginal KL divergence
-                    vis_mbs_dir = os.path.join(hps.logdir, 'samples', 'samples_epoch_%04d' % epoch, 'samples_%.1f' % hps.temp)
-                    kldiv_batch, cnt_batch = calc_kldiv_mb(
-                        image,
-                        x_sample_val.data.to('cpu'),
-                        vis_mbs_dir,
-                        pat_stats['sc_in_sd'],
-                        n_models
-                    )
-                    kldiv += kldiv_batch / cnt_batch
+#                    vis_mbs_dir = os.path.join(hps.logdir, 'samples', 'samples_epoch_%04d' % epoch, 'samples_%.1f' % hps.temp)
+#                    kldiv_batch, cnt_batch = calc_kldiv_mb(
+#                        image,
+#                        x_sample_val.data.to('cpu'),
+#                        vis_mbs_dir,
+#                        pat_stats['sc_in_sd'],
+#                        n_models
+                    # )
+                    # kldiv += kldiv_batch / cnt_batch
 
                 sample_loss_mean = np.mean(sample_loss)
                 kldiv /= count

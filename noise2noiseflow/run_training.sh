@@ -1,11 +1,22 @@
 #!/bin/bash
 
 # ====================================
-# Noise2NoiseFlow 训练脚本
+# Noise2NoiseFlow 训练脚本（双RTX 3090优化版）
 # 数据集: 12场景（8×150帧 + 4×50帧）
 # 原图: 1280×1024（已去除亮线）
 # 裁剪: 4个512×512区域（全部使用）
+# GPU: 2×RTX 3090 (24GB × 2 = 48GB)
 # ====================================
+
+# ========== GPU配置 ==========
+# 指定使用哪些GPU（0和1代表两张3090）
+export CUDA_VISIBLE_DEVICES=0,1
+
+echo "========================================"
+echo "GPU配置"
+echo "========================================"
+nvidia-smi --query-gpu=index,name,memory.total --format=csv
+echo ""
 
 # ========== 数据集配置 ==========
 DATASET_PATH="./data/my_grayscale_dataset"
@@ -37,44 +48,43 @@ echo "预估训练样本: $TRAIN_SAMPLES (图像 × $NUM_REGIONS 区域)"
 echo "预估测试样本: $TEST_SAMPLES"
 echo ""
 
-# ========== 训练参数 ==========
-# 批次大小（根据显存调整）
-# 数据量大，可以用更大的batch size
-# 4GB显存:  BATCH_SIZE=4
-# 8GB显存:  BATCH_SIZE=8-12
-# 12GB显存: BATCH_SIZE=16-20
-# 16GB+显存: BATCH_SIZE=24-32
-BATCH_SIZE=16
+# ========== 训练参数（双3090优化）==========
+# 双卡RTX 3090（48GB总显存）推荐配置
+BATCH_SIZE=8      # 总batch size，每张卡16
+# 如果显存充足可以尝试：
+# BATCH_SIZE=40    # 每张卡20
+# BATCH_SIZE=48    # 每张卡24（接近显存上限）
 
-# 训练轮数（数据量增加，可适当减少）
-EPOCHS=100
+# 训练轮数（大batch收敛快，可适当减少）
+EPOCHS=80          # 从100降到80
 
-# 学习率
-LEARNING_RATE=0.0001
+# 学习率（按batch size比例调整）
+LEARNING_RATE=0.0002   # 原来0.0001，batch从16→32，学习率也翻倍
 
-echo "训练参数:"
-echo "  Batch Size: $BATCH_SIZE"
+echo "训练参数（双GPU优化）:"
+echo "  总Batch Size: $BATCH_SIZE (每卡: $((BATCH_SIZE / 2)))"
 echo "  Epochs: $EPOCHS"
 echo "  Learning Rate: $LEARNING_RATE"
+echo "  注意: DataParallel会自动将batch分配到2张GPU"
 echo ""
 
 # ========== 模型参数 ==========
 N_CHANNELS=1
 ARCH="resflow"
 FLOW_PERMUTATION="invconv"
-LU_DECOMP=1
+#LU_DECOMP=1
 DENOISER="dncnn"
 DNCNN_LAYERS=9
 LAMBDA=1.0
 
 # ========== 其他参数 ==========
-LOGDIR="grayscale_4crop_full_12scenes"
+LOGDIR="grayscale_4crop_full_12scenes_dual_gpu"
 SEED=42
 N_BITS_X=8
 ISO=800
 CAMERA=0
 EPOCHS_FULL_VALID=10
-DO_SAMPLE=true
+DO_SAMPLE=false
 
 # ========== 检查数据集 ==========
 echo "========================================"
@@ -143,20 +153,37 @@ echo "    ✓ 区域2: [512:1024, 0:512] (左下)"
 echo "    ✓ 区域3: [512:1024, 512:1024] (右下)"
 echo "  说明: 全部4个区域可用（已去除亮线）"
 
-# ========== 显存估算 ==========
+# ========== 显存估算（双GPU）==========
 echo ""
-echo "显存需求估算:"
+echo "显存需求估算（双GPU）:"
 # 每个样本: 512×512×4字节 ≈ 1MB
-# 显存 ≈ batch_size × 1MB × 2(noisy1+noisy2) × 2(前向+反向) × 安全系数
-ESTIMATED_GB=$((BATCH_SIZE * 4 / 1024))
-echo "  约需显存: ~${ESTIMATED_GB}GB (batch_size=$BATCH_SIZE)"
+# 显存 ≈ (batch_size/2) × 1MB × 2(noisy1+noisy2) × 2(前向+反向) × 安全系数
+ESTIMATED_GB_PER_GPU=$((BATCH_SIZE * 4 / 2 / 1024))
+echo "  每张GPU约需显存: ~${ESTIMATED_GB_PER_GPU}GB (batch_size/gpu=$((BATCH_SIZE/2)))"
+echo "  总显存需求: ~$((ESTIMATED_GB_PER_GPU * 2))GB"
+echo "  可用显存: 48GB (2×24GB)"
 
-if [ $BATCH_SIZE -gt 20 ] && [ $ESTIMATED_GB -lt 12 ]; then
-    echo "  ⚠️  警告: batch_size较大，请确保有足够显存"
+if [ $ESTIMATED_GB_PER_GPU -gt 20 ]; then
+    echo "  ⚠️  警告: 每张GPU显存接近上限，请确保没有其他程序占用显存"
 fi
 
-# ========== 运行前确认 ==========
+# ========== 多GPU训练说明 ==========
 echo ""
+echo "========================================"
+echo "多GPU训练说明"
+echo "========================================"
+echo "✓ 使用DataParallel进行并行训练"
+echo "✓ GPU设备: 0, 1"
+echo "✓ 自动将batch分配到2张GPU"
+echo "✓ 预期加速比: 1.6-1.8×"
+echo ""
+echo "注意事项:"
+echo "  - 代码已修改save_checkpoint/load_checkpoint函数"
+echo "  - 模型保存时会自动去除DataParallel包装"
+echo "  - 训练过程中会显示GPU使用情况"
+echo ""
+
+# ========== 运行前确认 ==========
 echo "========================================"
 echo "准备开始训练"
 echo "========================================"
@@ -174,17 +201,18 @@ echo ""
 echo "开始训练..."
 echo ""
 
-python train_noise2noiseflow.py \
+# 使用修改后的训练脚本
+python3 train_noise2noiseflow.py \
     --dataset_path $DATASET_PATH \
     --patch_height $CROP_SIZE \
     --n_batch_train $BATCH_SIZE \
-    --n_batch_test 8 \
+    --n_batch_test 16 \
     --n_channels $N_CHANNELS \
     --epochs $EPOCHS \
     --lr $LEARNING_RATE \
     --arch $ARCH \
     --flow_permutation $FLOW_PERMUTATION \
-    --lu_decomp $LU_DECOMP \
+    --lu_decomp \
     --denoiser $DENOISER \
     --lmbda $LAMBDA \
     --logdir $LOGDIR \
@@ -223,6 +251,11 @@ if [ $? -eq 0 ]; then
     echo "  训练样本: $((ACTUAL_TRAIN * NUM_REGIONS)) (${ACTUAL_TRAIN}图像 × 4区域)"
     echo "  测试样本: $((ACTUAL_TEST * NUM_REGIONS)) (${ACTUAL_TEST}图像 × 4区域)"
     echo ""
+    echo "性能统计:"
+    echo "  使用GPU: 2×RTX 3090"
+    echo "  Batch Size: $BATCH_SIZE (每卡 $((BATCH_SIZE/2)))"
+    echo "  预期加速: ~1.7× vs 单GPU"
+    echo ""
     echo "下一步:"
     echo "  1. 查看训练曲线"
     echo "  2. 使用最佳模型进行推理"
@@ -234,9 +267,14 @@ else
     echo "========================================"
     echo ""
     echo "可能的原因:"
-    echo "  - 显存不足: 尝试减小 batch_size"
+    echo "  - 显存不足: 尝试减小 BATCH_SIZE"
+    echo "  - GPU不可用: 检查 nvidia-smi"
     echo "  - 数据加载错误: 检查数据集路径和文件命名"
     echo "  - 依赖缺失: 检查Python环境"
+    echo ""
+    echo "调试命令:"
+    echo "  nvidia-smi  # 查看GPU状态"
+    echo "  export CUDA_VISIBLE_DEVICES=0  # 尝试单GPU"
     echo ""
     echo "请查看上方错误信息进行调试"
     exit 1

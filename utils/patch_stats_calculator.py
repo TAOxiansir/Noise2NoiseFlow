@@ -6,6 +6,7 @@ import os
 import logging
 from numpy import save, load
 
+
 class PatchStatsCalculator:
 
     def __init__(self, dataset, patch_height=256, n_channels=4, save_dir='.', file_postfix=''):
@@ -33,7 +34,8 @@ class PatchStatsCalculator:
             'clean_sd': torch.zeros((self.n_channels, self.patch_height, self.patch_height)),
             'n_pat': 0,
             # scalars
-            'sc_in_mu': 0, 'sc_clean_mu': 0, 'sc_in_vr': 0, 'sc_clean_vr': 0, 'sc_in_sd': 0, 'sc_clean_sd': 0, 'n_pix': 0
+            'sc_in_mu': 0, 'sc_clean_mu': 0, 'sc_in_vr': 0, 'sc_clean_vr': 0, 'sc_in_sd': 0, 'sc_clean_sd': 0,
+            'n_pix': 0
         })
 
     def calc_stats(self):
@@ -45,16 +47,27 @@ class PatchStatsCalculator:
         # logging.trace('calc. stats: time = %3.0f s ' % (time.time() - t0))
         return self.stats
 
-
     def calc_patch_stats(self):
         n_pat = 0  # number of patches
-        
+
         for image in self.dataset:
-            for idx in range(image['noise'].shape[0]):
-                self.stats['in_vr'] = self.online_var_step(self.stats['in_vr'], self.stats['in_mu'], n_pat, image['noise'][idx])
-                self.stats['clean_vr'] = self.online_var_step(self.stats['clean_vr'], self.stats['clean_mu'], n_pat, image['clean'][idx])
-                self.stats['in_mu'] = self.online_mean_step(self.stats['in_mu'], n_pat, image['noise'][idx])
-                self.stats['clean_mu'] = self.online_mean_step(self.stats['clean_mu'], n_pat, image['clean'][idx])
+            # 兼容不同的数据格式
+            if 'noise' in image:
+                noise_data = image['noise']
+                clean_data = image['clean']
+            elif 'noisy1' in image:
+                noise_data = image['noisy1']
+                clean_data = image['noisy2']  # 使用 noisy2 作为 clean 的替代
+            else:
+                raise KeyError("数据中必须包含 'noise' 或 'noisy1' 字段")
+
+            for idx in range(noise_data.shape[0]):
+                self.stats['in_vr'] = self.online_var_step(self.stats['in_vr'], self.stats['in_mu'], n_pat,
+                                                           noise_data[idx])
+                self.stats['clean_vr'] = self.online_var_step(self.stats['clean_vr'], self.stats['clean_mu'], n_pat,
+                                                              clean_data[idx])
+                self.stats['in_mu'] = self.online_mean_step(self.stats['in_mu'], n_pat, noise_data[idx])
+                self.stats['clean_mu'] = self.online_mean_step(self.stats['clean_mu'], n_pat, clean_data[idx])
                 n_pat += 1
 
         self.stats['n_pat'] = n_pat
@@ -89,27 +102,40 @@ class PatchStatsCalculator:
         nll_sdn_lst = []
 
         for image in test_dataset:
-            x = image['noise']
-            y = image['clean']
+            # 兼容不同的数据格式
+            if 'noise' in image:
+                x = image['noise']
+                y = image['clean']
+            elif 'noisy1' in image:
+                x = image['noisy1']
+                y = image['noisy2']
+            else:
+                raise KeyError("数据中必须包含 'noise' 或 'noisy1' 字段")
 
             vr_gauss = self.stats['sc_in_vr']
             nll_mb_gauss = 0.5 * (torch.log(2 * torch.tensor(np.pi)) + torch.log(vr_gauss) + (x) ** 2 / vr_gauss)
             nll_mb_gauss = torch.sum(nll_mb_gauss, axis=(1, 2, 3))
-            nll_gauss_lst.append(np.array(nll_mb_gauss))
+            
+            # 修复: 将每个值单独添加到列表，而不是整个数组
+            for val in nll_mb_gauss:
+                nll_gauss_lst.append(val.item())
 
-            if 'nlf0' in image.keys(): # sRGB vs Raw
+            if 'nlf0' in image.keys():  # sRGB vs Raw
                 nlf0 = image['nlf0']
                 nlf1 = image['nlf1']
                 vr = y * nlf0 + nlf1
                 nll_mb = 0.5 * (torch.log(2 * torch.tensor(np.pi)) + torch.log(vr) + (x) ** 2 / vr)
                 nll_mb = torch.sum(nll_mb, axis=(1, 2, 3))
-                nll_sdn_lst.append(np.array(nll_mb))
+                
+                # 修复: 将每个值单独添加到列表
+                for val in nll_mb:
+                    nll_sdn_lst.append(val.item())
 
         nll_sdn = np.mean(nll_sdn_lst) if len(nll_sdn_lst) > 0 else np.nan
         nll_gauss = np.mean(nll_gauss_lst)
         save(os.path.join(self.save_dir, 'nll_bpd_gauss%s.npy') % self.file_postfix, (nll_gauss, 0))
         save(os.path.join(self.save_dir, 'nll_bpd_sdn%s.npy') % self.file_postfix, (nll_sdn, 0))
-        
+
         return nll_gauss, nll_sdn
 
     @staticmethod
@@ -123,5 +149,3 @@ class PatchStatsCalculator:
             return cur_var + ((new_point - cur_mean) ** 2 / (cur_n + 1)) - (cur_var / cur_n)
         else:
             return cur_var
-
-    
