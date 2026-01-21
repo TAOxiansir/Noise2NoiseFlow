@@ -9,7 +9,7 @@ import torch
 import torch.optim as optim
 from torch.autograd import Variable
 import argparse
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 import torchvision.utils as utils
 import os
 import shutil
